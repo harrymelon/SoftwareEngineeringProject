@@ -1,4 +1,5 @@
-
+import time
+import datetime
 class UI():
     def calculate_cost(self):
             a = Room()
@@ -14,6 +15,5 @@ class Room:
         self.WindSpeed = 0    #保存当前风速
         self.Mode = 0    #保存制冷制热模式
 
-a = UI()
-a.calculate_cost()
+print(-2 %3)
 

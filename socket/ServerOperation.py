@@ -16,6 +16,7 @@ UserInfoPath = "Info\\"
 # 5. 真实环境的温度模拟
 # 溜了溜了，继续肝操作系统的作业……
 class ServerData:
+    virtualClock = 0
     socket_pool = {}  # 并发的实时信息线程池
     MenuPool = {}  # 并发的按键信息线程池
     CLOCK = {}  # 未来开并发的时候，这里改为数组，然后通过映射对应每个客户端的clock时间
@@ -30,7 +31,7 @@ class ServerData:
     SocketSucceed = {}
     timeline = ""  # 获取的系统实际时间
     RoomCount = 0  # 当前已经启动的客户端数目
-    RoomStatus = {}  #保存房间每分钟的
+    RoomStatus = {}  #保存房间每分钟的情况
 
     def getCost(self):  # 对外接口，读取当前总花销
         return self.Cost
@@ -84,6 +85,7 @@ class ServerData:
         # 运行实时通讯线程
         while True:
             self.Time(RoomNumber)
+            self.virtualClock += 1
             newServerSocket.send(str(self.RunTime[RoomNumber]).encode())
             newServerSocket.recv(1024)
             newServerSocket.send(self.timeline.encode())
@@ -99,7 +101,8 @@ class ServerData:
             newServerSocket.recv(1024)
             newServerSocket.send(str(self.Mode[RoomNumber]).encode())
             newServerSocket.recv(1024)
-
+            newServerSocket.send(str(self.virtualClock).encode())
+            newServerSocket.recv(1024)
             newServerSocket.send("isRoomTempChange".encode())
             self.Temperature[RoomNumber] = newServerSocket.recv(1024).decode()
             time.sleep(3)
@@ -109,16 +112,29 @@ class ServerData:
         now = datetime.datetime.now()
         self.timeline = now.strftime("%Y-%m-%d %H:%M:%S")
 
-    def CostRecord(self, RoomNumber):  # 记录该用户的所有使用记录
-        CurrentData = []
-        CurrentData.append(self.CLOCK[RoomNumber])
-        CurrentData.append(self.WindSpeed[RoomNumber])
-        CurrentData.append(self.Temperature[RoomNumber])
-        CurrentData.append(self.TemperatureSet[RoomNumber])
-        CurrentData.append(self.Mode[RoomNumber])
-        CurrentData.append(self.isRun[RoomNumber])
-        CurrentData.append(self.Cost[RoomNumber])
-        self.UserData[RoomNumber].append(CurrentData)
+    def CostRecord(self, RoomNumber):  # 记录该用户的所有使用记录,方便存入数据库
+        roomData = Room()
+        roomData.isRun = self.Cost[RoomNumber]
+        roomData.Mode = self.Mode[RoomNumber]
+        roomData.Temperature = self.Temperature[RoomNumber]
+        roomData.TemperatureSet = self.TemperatureSet[RoomNumber]
+        roomData.WindSpeed = self.WindSpeed[RoomNumber]
+        flag = self.status_is_diff(RoomStatus[RoomNumber][-1],roomData)
+        if flag == 0:  #如果是相同的
+            RoomStatus[RoomNumber].append(roomData)
+        elif flag == 1:  #前一个状态跟当前状态不同
+            pass  #把RoomNumber的数据存放到数据库中
+            RoomStatus[RoomNumber].clear()  #把之前的数据删除
+            RoomStatus[RoomNumber].append(roomData)  #把本次数据写入
+        # CurrentData = []
+        # CurrentData.append(self.CLOCK[RoomNumber])
+        # CurrentData.append(self.WindSpeed[RoomNumber])
+        # CurrentData.append(self.Temperature[RoomNumber])
+        # CurrentData.append(self.TemperatureSet[RoomNumber])
+        # CurrentData.append(self.Mode[RoomNumber])
+        # CurrentData.append(self.isRun[RoomNumber])
+        # CurrentData.append(self.Cost[RoomNumber])
+        # self.UserData[RoomNumber].append(CurrentData)
 
     def CostCalcu(self, RoomNumber):  # 需要补充计费策略
         if self.isRun[RoomNumber] == 1:  #该房间空调正在运行
@@ -184,12 +200,26 @@ class ServerData:
     def supply_air_to_room(self):
         pass
 
+    def status_is_diff(self,statusA,statusB):
+        if statusA.isRun == statusB.isRun and statusA.WindSpeed == statusB.WindSpeed and \
+            statusA.Mode == statusB.Mode and statusA.TemperatureSet == statusB.TemperatureSet:
+            return 0
+        else:
+            return 1
+        
+    def whether_air_supp(self,RoomNumber): #判断是否向房间RoomNumber送风
+        if self.TemperatureSet[RoomNumber] == self.Temperature[RoomNumber]:  #当前温度等于实际温度
+            self.WindSpeed[RoomNumber] = -self.WindSpeed[RoomNumber]
+        elif abs(self.TemperatureSet[RoomNumber] - self.Temperature[RoomNumber] >= 1): #当温度差大于1是
+            self.WindSpeed[RoomNumber] = abs(self.WindSpeed[RoomNumber])
+ 
 
 class Room:
     def __init__(self):
         self.isRun  = 0    #保存是否在运行
         self.Temperature = 0    #保存房间温度
-        self.Temperature = 0    #保存房间设置的温度
+        self.TemperatureSet = 0    #保存房间设置的温度
         self.WindSpeed = 0    #保存当前风速
         self.Mode = 0    #保存制冷制热模式
+        self.COLCK = 0
         

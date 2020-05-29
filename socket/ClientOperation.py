@@ -7,7 +7,7 @@ import os
 class UI:
     ClientSocket = None
     ClientSocket2 = None
-    WindSpeed = 0  # 表示风速的调整模式，0最低，2最高，一个思路是，change每次+1并模3，实现风速的低中高循环,从而可以少设置一个按键
+    WindSpeed = 1  # 表示风速的调整模式，1最低，3最高，一个思路是，change每次+1并模3，实现风速的低中高循环,从而可以少设置一个按键
     Temperature = 18  # 房间的实际温度
     TemperatureSet = 25  # 房间的设定温度
     
@@ -20,7 +20,11 @@ class UI:
 
     def WindSetting(self):  # 修改风速
         # 该模块当前仅设置了传输的模块功能，剩余还需要补充的有：快速连续输入的模式下，需要合并在1s内输入的结果记录在change里，该功能尽量在Menu函数里调用这个函数的时候实现
-        self.WindSpeed = (self.WindSpeed + 1) % 3
+        self.WindSpeed = abs(self.WindSpeed)
+        if self.WindSpeed == 1 or self.WindSpeed == 2:
+            self.WindSpeed += 1
+        elif self.WindSpeed == 3:
+            self.WindSpeed = 1
         print("WindSpeed = ", self.WindSpeed)
 
     def ModeSetting(self):
@@ -92,6 +96,7 @@ class UI:
 
 
 class Room:  # 房间类，包含UI和sensor类
+    virtualClock = 0
     ClientSocket = None
     ClientSocket2 = None
     WindSpeed = 0  # 表示风速的调整模式，0最低，2最高，一个思路是，change每次+1并模3，实现风速的低中高循环,从而可以少设置一个按键
@@ -150,6 +155,10 @@ class Room:  # 房间类，包含UI和sensor类
         self.Mode = int(self.Mode)
         self.ClientSocket.send("#".encode())
         self.UIInfo.Mode = self.Mode
+
+        self.virtualClock = self.ClientSocket.recv(1024).decode()
+        self.virtualClock = int(self.virtualClock)
+        self.ClientSocket.send("#".encode())
         #self.UIInfo.TransBuild()
 
     def TransBuild(self):  # 实时信息传输的线程
@@ -186,32 +195,33 @@ class Room:  # 房间类，包含UI和sensor类
             self.isWindChange = self.UIInfo.Menu()
 
     def TempChange(self):  # 修改房间温度,这里的算法需要你来完成，现在这个是我随手写的
-        if self.isRun == 1:  #如果房间的空调属于运行状态
-            if self.Mode == 0:  #制热情况
-                if self.WindSpeedTime % 3 == 0:
-                    self.sensor.Temp += 0.4
-                elif self.WindSpeedTime % 3 == 1:
-                    self.sensor.Temp += 0.5
-                elif self.WindSpeedTime % 3 == 2:
-                    self.sensor.Temp += 0.6
-            elif self.Mode == 1:  #制热情况
-                if self.WindSpeedTime % 3 == 0:
-                    self.sensor.Temp -= 0.4
-                elif self.WindSpeedTime % 3 == 1:
-                    self.sensor.Temp -= 0.5
-                elif self.WindSpeedTime % 3 == 2:
-                    self.sensor.Temp -= 0.6
-        elif self.isRun == 0 :  #房间空调处于关机状态
-            if self.sensor.Temp > self.InitialTemperature:  #比初始化温度高会降温
-                if self.sensor.Temp - self.InitialTemperature > 0.5:
-                    self.sensor.Temp -= 0.5
-                else:
-                    self.sensor.Temp = self.InitialTemperature
-            elif self.sensor.Temp < self.InitialTemperature:  #比初始化温度低会升温
-                if self.InitialTemperature - self.sensor.Temp > 0.5:
-                    self.sensor.Temp += 0.5
-                else:
-                    self.sensor.Temp = self.InitialTemperature
+        if self.virtualClock % 60 == 0:  #整分的情况，才会修改温度
+            if self.isRun == 1:  #如果房间的空调属于运行状态
+                if self.Mode == 0:  #制热情况
+                    if self.WindSpeedTime == 1:
+                        self.sensor.Temp += 0.4
+                    elif self.WindSpeedTime == 2:
+                        self.sensor.Temp += 0.5
+                    elif self.WindSpeedTime == 3:
+                        self.sensor.Temp += 0.6
+                elif self.Mode == 1:  #制冷情况
+                    if self.WindSpeedTime == 1:
+                        self.sensor.Temp -= 0.4
+                    elif self.WindSpeedTime == 2:
+                        self.sensor.Temp -= 0.5
+                    elif self.WindSpeedTime == 3:
+                        self.sensor.Temp -= 0.6
+            elif self.isRun == 0 or WindSpeedTime < 0:  #房间空调处于关机状态或者处于停止送风
+                if self.sensor.Temp > self.InitialTemperature:  #比初始化温度高会降温
+                    if self.sensor.Temp - self.InitialTemperature > 0.5:
+                        self.sensor.Temp -= 0.5
+                    else:
+                        self.sensor.Temp = self.InitialTemperature
+                elif self.sensor.Temp < self.InitialTemperature:  #比初始化温度低会升温
+                    if self.InitialTemperature - self.sensor.Temp > 0.5:
+                        self.sensor.Temp += 0.5
+                    else:
+                        self.sensor.Temp = self.InitialTemperature
         self.ClientSocket.recv(1024)
         self.ClientSocket.send(str(self.sensor.Temp).encode())
 
